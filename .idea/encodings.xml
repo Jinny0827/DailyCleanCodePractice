@@ -2,6 +2,8 @@
 <project version="4">
   <component name="Encoding" defaultCharsetForPropertiesFiles="UTF-8">
     <file url="file://$PROJECT_DIR$/src/main/java/org/example/Main.java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/day1/Day01OrderRefactoring.java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/day2/Day2UserValidator.java" charset="UTF-8" />
     <file url="PROJECT" charset="UTF-8" />
   </component>
 </project>
