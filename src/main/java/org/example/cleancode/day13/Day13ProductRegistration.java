@@ -13,7 +13,7 @@ package org.example.cleancode.day13;
 public class Day13ProductRegistration {
 
         public static void main(String[] args) {
-            // 생성자가 너무 많은 파라미터를 가짐
+            // 생성자가 너무 많은 파라미터를 가짐 -> 빌더 패턴으로 변경
             Product product1 = new Product.Builder("P001", "노트북")
                     .description("삼성 갤럭시북")
                     .price(1500000)
