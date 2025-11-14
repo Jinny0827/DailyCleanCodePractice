@@ -2,6 +2,7 @@ package org.example.cleancode.day28;
 
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -14,35 +15,69 @@ import java.util.Map;
  * - 통계 정보 부재
  */
 public class Day28ProductService {
+    private static final int MAX_CACHE_SIZE = 3; // 테스트용 작은 크기
+    private static final long DEFAULT_TTL = 30000; // 30초로 늘림
 
-    private Map<String, Product> cache = new HashMap<>();
+    private Map<String, CacheEntry<Product>> cache = new LinkedHashMap<>(
+            16, // 초기 용량
+            0.75f, // 로드 펙터
+            true // accessOrder = true (LRU 핵심)
+    ) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, CacheEntry<Product>> eldest) {
+            boolean shouldRemove = size() > MAX_CACHE_SIZE;
+
+            if(shouldRemove) {
+                System.out.println("🗑️ LRU 제거: " + eldest.getKey());
+            }
+
+            return shouldRemove;
+        }
+    };
+
+
     private ProductRepository repository = new ProductRepository();
+
 
     public static void main(String[] args) {
         Day28ProductService service = new Day28ProductService();
 
-        // 캐시 미스
+        System.out.println("=== 캐시에 4개 항목 추가 (최대 3개) ===");
         service.getProduct("P001");
         service.getProduct("P002");
+        service.getProduct("P003");
+        service.getProduct("P004"); // P001 제거
 
-        // 캐시 히트
-        service.getProduct("P001");
-        service.getProduct("P001");
+        System.out.println("\n=== P001 재조회 ===");
+        service.getProduct("P001"); // 캐시 미스
 
-        // 상품 업데이트 (캐시 무효화 필요)
-        service.updateProduct("P001", 200000);
-        service.getProduct("P001");  // 오래된 데이터 반환
+        System.out.println("\n=== P002 재조회 ===");
+        service.getProduct("P002"); // 캐시 히트
     }
 
     public Product getProduct(String productId) {
-        if (cache.containsKey(productId)) {
-            System.out.println("💾 캐시에서 조회: " + productId);
-            return cache.get(productId);
+        CacheEntry<Product> entry = cache.get(productId);
+
+        if(entry != null && !entry.isExpired()) {
+            System.out.println("캐시 히트 : " + productId);
+            return entry.getValue();
         }
 
-        System.out.println("🔍 DB에서 조회: " + productId);
+        if (entry != null) {
+            System.out.println("⏰ 캐시 만료: " + productId);
+        } else {
+            System.out.println("🔍 캐시 미스: " + productId);
+        }
+
         Product product = repository.findById(productId);
-        cache.put(productId, product);
+        CacheEntry<Product> newEntry = new CacheEntry<>(
+                product,
+                System.currentTimeMillis(),
+                DEFAULT_TTL
+        );
+
+        cache.put(productId, newEntry);
+
         return product;
     }
 
@@ -55,6 +90,36 @@ public class Day28ProductService {
     }
 
 }
+
+class CacheEntry<T> {
+    private final T value;
+    private final long createdAt;
+    private final long ttlMillis;
+
+    public CacheEntry(T value, long createdAt, long ttlMillis) {
+        this.value = value;
+        this.createdAt = createdAt;
+        this.ttlMillis = ttlMillis;
+    }
+
+    public T getValue() {
+        return value;
+    }
+
+    public long getCreatedAt() {
+        return createdAt;
+    }
+
+    public long getTtlMillis() {
+        return ttlMillis;
+    }
+
+    public boolean isExpired() {
+        long currentTime = System.currentTimeMillis();
+        return (currentTime - createdAt) > ttlMillis;
+    }
+}
+
 
 class Product {
     private String id;
