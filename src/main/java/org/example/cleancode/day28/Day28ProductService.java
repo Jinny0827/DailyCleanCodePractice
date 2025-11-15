@@ -52,6 +52,7 @@ public class Day28ProductService {
         service.getProduct("P001"); // 캐시 미스
 
         System.out.println("\n=== P002 재조회 ===");
+        service.invalidateAll();
         service.getProduct("P002"); // 캐시 히트
     }
 
@@ -85,8 +86,26 @@ public class Day28ProductService {
         Product product = repository.findById(productId);
         product.setPrice(newPrice);
         repository.update(product);
+
+        invalidate(productId);
+
+
         System.out.println("✓ 상품 업데이트: " + productId);
         // 캐시 무효화 없음!
+    }
+
+    // 특정 항목 캐시 무효화
+    public void invalidate(String productId) {
+        if(cache.remove(productId) != null) {
+            System.out.println("🧹 캐시 무효화: " + productId);
+        }
+    }
+
+    // 전체 캐시 초기화
+    public void invalidateAll() {
+        int size = cache.size();
+        cache.clear();
+        System.out.println("🧹 전체 캐시 초기화: " + size + "개 항목 제거");
     }
 
 }
