@@ -18,6 +18,8 @@ public class Day28ProductService {
     private static final int MAX_CACHE_SIZE = 3; // 테스트용 작은 크기
     private static final long DEFAULT_TTL = 30000; // 30초로 늘림
 
+    private CacheStatistics statistics = new CacheStatistics();
+
     private Map<String, CacheEntry<Product>> cache = new LinkedHashMap<>(
             16, // 초기 용량
             0.75f, // 로드 펙터
@@ -29,6 +31,7 @@ public class Day28ProductService {
 
             if(shouldRemove) {
                 System.out.println("🗑️ LRU 제거: " + eldest.getKey());
+                statistics.recordEviction();
             }
 
             return shouldRemove;
@@ -39,21 +42,35 @@ public class Day28ProductService {
     private ProductRepository repository = new ProductRepository();
 
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
         Day28ProductService service = new Day28ProductService();
 
-        System.out.println("=== 캐시에 4개 항목 추가 (최대 3개) ===");
+        // 1. 초기 조회 (3번 미스)
         service.getProduct("P001");
         service.getProduct("P002");
         service.getProduct("P003");
+
+        // 2. 재조회 (3번 히트)
+        service.getProduct("P001");
+        service.getProduct("P002");
+        service.getProduct("P003");
+
+        // 3. LRU 테스트
         service.getProduct("P004"); // P001 제거
+        service.getProduct("P001"); // 미스 (제거됨)
 
-        System.out.println("\n=== P001 재조회 ===");
-        service.getProduct("P001"); // 캐시 미스
+        // 4. 캐시 무효화
+        System.out.println();
+        service.updateProduct("P002", 50000);
+        service.getProduct("P002"); // 미스 (무효화됨)
 
-        System.out.println("\n=== P002 재조회 ===");
-        service.invalidateAll();
-        service.getProduct("P002"); // 캐시 히트
+        // 5. TTL 테스트 (선택)
+        System.out.println("\n⏳ 31초 대기 중...\n");
+        Thread.sleep(31000);
+        service.getProduct("P003"); // 만료
+
+        // 📊 최종 통계
+        service.printStatistics();
     }
 
     public Product getProduct(String productId) {
@@ -61,14 +78,18 @@ public class Day28ProductService {
 
         if(entry != null && !entry.isExpired()) {
             System.out.println("캐시 히트 : " + productId);
+            statistics.recordHit();
             return entry.getValue();
         }
 
         if (entry != null) {
             System.out.println("⏰ 캐시 만료: " + productId);
+            statistics.recordExpiration();
         } else {
             System.out.println("🔍 캐시 미스: " + productId);
         }
+
+        statistics.recordMiss();
 
         Product product = repository.findById(productId);
         CacheEntry<Product> newEntry = new CacheEntry<>(
@@ -80,6 +101,11 @@ public class Day28ProductService {
         cache.put(productId, newEntry);
 
         return product;
+    }
+
+    public void printStatistics() {
+        statistics.setCurrentSize(cache.size());
+        statistics.printReport();
     }
 
     public void updateProduct(String productId, int newPrice) {
@@ -177,5 +203,59 @@ class ProductRepository {
 
     public void update(Product product) {
         database.put(product.getId(), product);
+    }
+}
+
+// 캐시 통계 클래스 생성
+class CacheStatistics {
+    private long totalRequests = 0;
+    private long cacheHits = 0;
+    private long cacheMisses = 0;
+    private long expirations = 0;
+    private long evictions = 0;
+
+    public void recordHit() {
+        totalRequests++;
+        cacheHits++;
+    }
+
+
+    public void recordMiss() {
+        totalRequests++;
+        cacheMisses++;
+    }
+
+    public void recordExpiration() {
+        expirations++;
+    }
+
+    public void recordEviction() {
+        evictions++;
+    }
+
+    public double getHitRate() {
+        if(totalRequests == 0) return 0.0;
+        return (double) cacheHits / totalRequests * 100;
+    }
+
+    public void printReport() {
+        System.out.println("\n📊 === 캐시 통계 ===");
+        System.out.println("총 요청: " + totalRequests);
+        System.out.println("캐시 히트: " + cacheHits);
+        System.out.println("캐시 미스: " + cacheMisses);
+        System.out.println("만료: " + expirations);
+        System.out.println("LRU 제거: " + evictions);
+        System.out.printf("히트율: %.2f%%\n", getHitRate());
+        System.out.println("현재 캐시 크기: " + getCurrentSize());
+    }
+
+    private int currentSize;
+
+    public void setCurrentSize(int size) {
+        this.currentSize = size;
+    }
+
+    public int getCurrentSize() {
+        return currentSize;
     }
 }
