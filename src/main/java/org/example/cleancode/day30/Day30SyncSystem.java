@@ -22,15 +22,65 @@ public class Day30SyncSystem {
         // 시뮬레이션
         SyncManager manager = new SyncManager();
 
-        // 1. API에서 데이터 가져와서 DB 저장
+        // 1. 초기 동기화 (API v0 → DB v1)
         manager.syncFromApiToDb("USER-001");
 
-        // 2. 충돌 케이스 (예외 발생!)
-        manager.updateInApi("USER-001", "john_v2");    // API 버전 1→2
-        manager.updateInDb("USER-001", "john_db_v2");  // DB는 여전히 버전 1
+        System.out.println("\n--- 충돌 시나리오 ---");
+
+        // 2. API 수정 (v1 → v2)
+        manager.updateInApi("USER-001", "john_api");
+
+        Thread.sleep(100);  // 타임스탬프 차이 만들기
+
+        // 3. DB에서 이전 버전(v1)으로 덮어쓰기 시도 → 충돌!
+        VersionedUserData oldData = manager.db.get("USER-001");
+        oldData.setUsername("john_db");
+        manager.db.save(oldData);  // 👈 버전 충돌 발생!
+
+        System.out.println("\n📊 최종 결과:");
+        System.out.println("API: " + manager.api.get("USER-001").getUsername()
+                + " (v" + manager.api.get("USER-001").getVersion() + ")");
+        System.out.println("DB: " + manager.db.get("USER-001").getUsername()
+                + " (v" + manager.db.get("USER-001").getVersion() + ")");
     }
 
 }
+
+// 충돌 해결 전략을 위한 인터페이스 생성
+interface ConflictResolver {
+    VersionedUserData resolve(
+            VersionedUserData source,
+            VersionedUserData target
+    );
+}
+
+/** 충돌 해결 전략을 위한 구현체 */
+// 최신 우선 구현체
+class LastWriteWinsResolver implements ConflictResolver {
+    @Override
+    public VersionedUserData resolve(VersionedUserData source, VersionedUserData target) {
+        return source.getLastModified() > target.getLastModified() ? source : target;
+    }
+}
+
+//소스 우선
+class SourceWinsResolver implements ConflictResolver {
+    @Override
+    public VersionedUserData resolve(VersionedUserData source, VersionedUserData target) {
+        return source;
+    }
+}
+
+// 타겟 우선
+class targetWinsResolver implements ConflictResolver {
+    @Override
+    public VersionedUserData resolve(VersionedUserData source, VersionedUserData target) {
+        return target;
+    }
+}
+
+
+
 
 // 버전 관리 추가
 class VersionedUserData {
@@ -86,6 +136,11 @@ interface DataSource {
 
 class DatabaseDataSource implements DataSource {
     private Map<String, VersionedUserData> storage = new HashMap<>();
+    private ConflictResolver resolver;
+
+    public DatabaseDataSource(ConflictResolver resolver) {
+        this.resolver = resolver;
+    }
 
     @Override
     public VersionedUserData get(String id) {
@@ -98,10 +153,16 @@ class DatabaseDataSource implements DataSource {
 
         // 버전 충돌 체크
         if(existing != null && existing.getVersion() != data.getVersion()) {
-            throw new ConcurrentModificationException(
-                    "💥 DB 버전 충돌: 기존=" + existing.getVersion() +
-                            ", 요청=" + data.getVersion()
-            );
+            System.out.println("⚠️ 충돌 감지! Resolver 실행...");
+
+            // 버전 증가로 충돌 해결
+            VersionedUserData resolved = resolver.resolve(data, existing);
+            resolved.incrementVersion();
+            storage.put(resolved.getId(), resolved);
+            
+            System.out.println("✅ 충돌 해결: " + resolved.getUsername()
+                    + " (v" + resolved.getVersion() + ")");
+            return;
         }
 
         data.incrementVersion();
@@ -112,8 +173,11 @@ class DatabaseDataSource implements DataSource {
 
 class ApiDataSource implements DataSource {
     private Map<String, VersionedUserData> storage = new HashMap<>();
+    private ConflictResolver resolver;
 
-    public ApiDataSource() {
+
+    public ApiDataSource(ConflictResolver resolver) {
+        this.resolver = resolver;
         storage.put("USER-001", new VersionedUserData("USER-001", "john", "john@api.com"));
     }
 
@@ -127,10 +191,15 @@ class ApiDataSource implements DataSource {
         VersionedUserData existing = storage.get(data.getId());
 
         if (existing != null && existing.getVersion() != data.getVersion()) {
-            throw new ConcurrentModificationException(
-                    "💥 API 버전 충돌: 기존=" + existing.getVersion() +
-                            ", 요청=" + data.getVersion()
-            );
+            System.out.println("⚠️ API 충돌 감지! Resolver 실행...");
+
+            VersionedUserData resolved = resolver.resolve(data, existing);
+            resolved.incrementVersion();
+            storage.put(resolved.getId(), resolved);
+
+            System.out.println("✅ API 충돌 해결: " + resolved.getUsername()
+                    + " (v" + resolved.getVersion() + ")");
+            return;
         }
 
         data.incrementVersion();
@@ -140,9 +209,10 @@ class ApiDataSource implements DataSource {
 }
 class CacheDataSource implements DataSource {
     private Map<String, VersionedUserData> storage = new HashMap<>();
+    private ConflictResolver resolver;
 
-    public CacheDataSource() {
-        storage.put("USER-001", new VersionedUserData("USER-001", "john", "john@api.com"));
+    public CacheDataSource(ConflictResolver resolver) {
+        this.resolver = resolver;
     }
 
     @Override
@@ -155,10 +225,15 @@ class CacheDataSource implements DataSource {
         VersionedUserData existing = storage.get(data.getId());
 
         if (existing != null && existing.getVersion() != data.getVersion()) {
-            throw new ConcurrentModificationException(
-                    "💥 API 버전 충돌: 기존=" + existing.getVersion() +
-                            ", 요청=" + data.getVersion()
-            );
+            System.out.println("⚠️ Cache 충돌 감지! Resolver 실행...");
+
+            VersionedUserData resolved = resolver.resolve(data, existing);
+            resolved.incrementVersion();
+            storage.put(resolved.getId(), resolved);
+
+            System.out.println("✅ Cache 충돌 해결: " + resolved.getUsername()
+                    + " (v" + resolved.getVersion() + ")");
+            return;
         }
 
         data.incrementVersion();
@@ -168,9 +243,18 @@ class CacheDataSource implements DataSource {
 }
 
 class SyncManager {
-    private ApiDataSource api = new ApiDataSource();
-    private DatabaseDataSource db = new DatabaseDataSource();
-    private CacheDataSource cache = new CacheDataSource();
+    public ApiDataSource api;
+    public DatabaseDataSource db;
+    public CacheDataSource cache;
+
+    public SyncManager() {
+        ConflictResolver resolver = new LastWriteWinsResolver();
+
+        this.api = new ApiDataSource(resolver);
+        this.db = new DatabaseDataSource(resolver);
+        this.cache = new CacheDataSource(resolver);
+    }
+
 
     // 문제 1: 버전 관리 없음 - 동시 수정 감지 불가
     public void syncFromApiToDb(String userId) {
