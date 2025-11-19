@@ -30,7 +30,7 @@ public class Day30SyncSystem {
         // 2. API 수정 (v1 → v2)
         manager.updateInApi("USER-001", "john_api");
 
-        Thread.sleep(100);  // 타임스탬프 차이 만들기
+//        Thread.sleep(100);  // 타임스탬프 차이 만들기
 
         // 3. DB에서 이전 버전(v1)으로 덮어쓰기 시도 → 충돌!
         VersionedUserData oldData = manager.db.get("USER-001");
