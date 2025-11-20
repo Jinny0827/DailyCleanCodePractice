@@ -1,7 +1,11 @@
 package org.example.cleancode.day31;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Day 31: API 레이트 리미터
@@ -20,55 +24,60 @@ public class Day31RateLimiter {
     public static void main(String[] args) throws InterruptedException {
         RateLimiter limiter = new RateLimiter();
 
+        System.out.println("🧪 동시성 테스트 시작\n");
 
-        for (int i = 1; i <= 4; i++) {
-            RateLimitResult result = limiter.checkLimit("user-A");
-
-            if(result.isAllowed()) {
-                System.out.println("✅ 요청 허용 - 남은 횟수: " + result.getRemaining());
-            } else {
-                System.out.println("❌ 요청 거부 - "
-                        + result.getResetTimeInSeconds() + "초 후 재시도");
-            }
+        // 10개 스레드가 동시에 같은 사용자로 요청
+        for (int i = 0; i < 10; i++) {
+            final int threadNum = i + 1;
+            new Thread(() -> {
+                RateLimitResult result = limiter.checkLimit("user-A");
+                System.out.println("Thread-" + threadNum + ": "
+                        + (result.isAllowed() ? "✅ 허용" : "❌ 거부")
+                        + " (남은: " + result.getRemaining() + ")");
+            }).start();
         }
 
-        System.out.println("\n⏳ 60초 대기...\n");
-        Thread.sleep(60000);
+        Thread.sleep(1000);  // 모든 스레드 완료 대기
 
-        RateLimitResult result = limiter.checkLimit("user-A");
-        if(result.isAllowed()) {
-            System.out.println("✅ 리셋 후 요청 허용 - 남은 횟수: " + result.getRemaining());
-        }
+        System.out.println("\n📊 최종 확인");
+        RateLimitResult finalResult = limiter.checkLimit("user-A");
+        System.out.println("최종 상태: " + (finalResult.isAllowed() ? "허용" : "거부"));
     }
-
 }
 
 class RateLimiter {
-    private Map<String, UserRateLimit> userRequestCounts = new HashMap<>();
+
+    // 동시성 버그 시나리오 (ConcurrentHashMap 사용 처리)
+    private Map<String, UserRateLimit> userRequestCounts = new ConcurrentHashMap<>();
 
     private static final int MAX_REQUESTS = 3;
     private static final int WINDOW_SIZE_MS = 60000;
 
     // 시간 체크 로직으로 변경
     public RateLimitResult checkLimit(String userId) {
-        UserRateLimit limit = userRequestCounts.getOrDefault(userId, new UserRateLimit());
 
-        long currentTime = System.currentTimeMillis();
+        UserRateLimit limit = userRequestCounts.computeIfAbsent(
+                userId,
+                k -> new UserRateLimit()
+        );
 
+        synchronized (limit) {
+            long currentTime = System.currentTimeMillis();
 
-        if(currentTime - limit.windowStart > WINDOW_SIZE_MS) {
-            limit.requestCount = 0;
-            limit.windowStart = currentTime;
-        }
+            if(currentTime - limit.windowStart > WINDOW_SIZE_MS) {
+                limit.requestCount = 0;
+                limit.windowStart = currentTime;
+            }
 
-        limit.requestCount++;
-        userRequestCounts.put(userId, limit);
+            limit.requestCount++;
+            userRequestCounts.put(userId, limit);
 
             boolean allowed = limit.requestCount <= MAX_REQUESTS;
             int remaining = Math.max(0, MAX_REQUESTS - limit.requestCount);
             long resetTime = limit.windowStart + WINDOW_SIZE_MS;
 
             return new RateLimitResult(allowed, remaining, resetTime);
+        }
     }
 
     // 리셋 메서드가 수동임
