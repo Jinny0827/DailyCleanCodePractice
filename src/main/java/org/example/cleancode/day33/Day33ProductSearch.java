@@ -22,7 +22,8 @@ public class Day33ProductSearch {
     public static void main(String[] args) {
         ProductSearchService service = new ProductSearchService();
 
-        // 복잡한 검색
+        // 방법 1. 기존 방식
+        System.out.println("=== 방법 1: 기존 방식 ===");
         List<Predicate<Product>> filters = Arrays.asList(
                 new KeywordFilter("노트북"),
                 new PriceRangeFilter(10000, 200000),
@@ -33,6 +34,30 @@ public class Day33ProductSearch {
         List<Product> results = service.search(filters);
         System.out.println("검색 결과: " + results.size() + "건");
         results.forEach(System.out::println);
+
+
+
+        // 방법 2: 빌더 방식
+        System.out.println("\n=== 방법 2: 빌더 방식 ===");
+        List<Product> results2 = service.searchBuilder()
+                .keyword("노트북")
+                .priceRange(10000, 200000)
+                .category("전자기기")
+                .onlyInStock()
+                .execute();
+
+        System.out.println("검색 결과: " + results2.size() + "건");
+        results2.forEach(System.out::println);
+
+
+        // 방법 3: 다양한 조합 테스트 (빌더를 사용한 이유 -> 일부 파라미터를 사용해서 객체 생성)
+        System.out.println("\n=== 방법 3: 일부 조건만 ===");
+        List<Product> results3 = service.searchBuilder()
+                .category("전자기기")
+                .execute();
+
+        System.out.println("검색 결과: " + results3.size() + "건");
+        results3.forEach(System.out::println);
     }
 
 }
@@ -119,6 +144,49 @@ class InStockFilter implements Predicate<Product> {
 }
 
 
+// 검색용 빌더 클래스 생성
+class SearchBuilder {
+    private List<Predicate<Product>> filters = new ArrayList<>();
+    private ProductSearchService service;
+
+
+    public SearchBuilder(ProductSearchService service) {
+        this.service = service;
+    }
+
+
+    public SearchBuilder keyword(String keyword) {
+        if(keyword != null && !keyword.isEmpty()) {
+            filters.add(new KeywordFilter(keyword));
+        }
+
+        return this;
+    }
+
+    public SearchBuilder priceRange(int minPrice, int maxPrice) {
+        filters.add(new PriceRangeFilter(minPrice, maxPrice));
+
+        return this;
+    }
+
+    public SearchBuilder category(String category) {
+        filters.add(new CategoryFilter(category));
+
+        return this;
+    }
+
+    public SearchBuilder onlyInStock() {
+        filters.add(new InStockFilter(true));
+
+        return this;
+    }
+
+    public List<Product> execute() {
+        return service.search(filters);
+    }
+}
+
+
 
 class Product {
     private String id;
@@ -174,5 +242,10 @@ class ProductSearchService {
         return database.stream()
                 .filter(combinedFilter)
                 .collect(Collectors.toList());
+    }
+
+
+    public SearchBuilder searchBuilder() {
+        return new SearchBuilder(this);
     }
 }
