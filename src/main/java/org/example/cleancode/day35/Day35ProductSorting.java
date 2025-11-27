@@ -19,18 +19,58 @@ public class Day35ProductSorting {
     public static void main(String[] args) {
         ProductService service = new ProductService();
 
-        // 가격 내림차순 (역차순)
-        Comparator<Product> priceDesc = new SortBuilder()
-                .orderBy(ProductComparators.BY_PRICE)
+        System.out.println("=== 평점순 (같으면 가격순) ===");
+        Comparator<Product> ratingThenPrice = new SortBuilder()
+                .orderBy(ProductComparators.BY_RATING)
                 .direction(SortDirection.DESC)
+                .thenBy(ProductComparators.BY_PRICE)
                 .build();
 
-        List<Product> result = service.sortProducts(priceDesc);
-        System.out.println("=== 가격 내림차순 ===");
-        result.forEach(System.out::println);
+        // thenBy로 이미 정렬된 값을 다른 조건으로 재정렬(여기선 price로)
+        service.sortProducts(ratingThenPrice)
+                .forEach(System.out::println);
+
+
+        System.out.println("\n=== 재고순 (같으면 이름순) ===");
+        Comparator<Product> stockThenName = new SortBuilder()
+                .orderBy(ProductComparators.BY_STOCK)
+                .thenBy(ProductComparators.BY_NAME)
+                .build();
+
+        service.sortProducts(stockThenName)
+                .forEach(System.out::println);
     }
 
 }
+
+// 정렬 프리셋(자주 사용될 정렬조건들 상수화)
+class SortPreset {
+    // 인기순 (평점 높고 재고 많은 순)
+    public static final Comparator<Product> POPULAR =
+            new SortBuilder()
+                    .orderBy(ProductComparators.BY_RATING)
+                    .direction(SortDirection.DESC)
+                    .thenBy(ProductComparators.BY_STOCK)
+                    .build();
+    
+    
+    // 가성비 순 (가격 낮고 평점 높은 순)
+    public static final Comparator<Product> BEST_VALUE =
+            new SortBuilder()
+                    .orderBy(ProductComparators.BY_PRICE)
+                    .thenBy(ProductComparators.BY_RATING)
+                    .build();
+    
+    // 프리미엄 순 (가격 높고 평점 높은 순)
+    public static final Comparator<Product> PREMIUM =
+            new SortBuilder()
+                    .orderBy(ProductComparators.BY_PRICE)
+                    .direction(SortDirection.DESC)
+                    .thenBy(ProductComparators.BY_RATING)
+                    .build();
+
+}
+
 
 // 정렬 방향 상수 모음 enum
 enum SortDirection {
@@ -39,11 +79,16 @@ enum SortDirection {
 
 class SortBuilder {
     private Comparator<Product> comparator;
+
     //기본 오름차순
     private SortDirection direction = SortDirection.ASC;
 
 
     public SortBuilder orderBy(Comparator<Product> comparator) {
+        if(comparator == null ) {
+            throw new IllegalArgumentException("Comparator는 null일 수 없습니다");
+        }
+
         this.comparator = comparator;
         return this;
     }
@@ -54,11 +99,23 @@ class SortBuilder {
     }
 
     public SortBuilder thenBy(Comparator<Product> secondaryComparator) {
+        if(comparator == null) {
+            throw new IllegalStateException("orderBy()를 먼저 호출해야 합니다");
+        }
+
+        if(secondaryComparator == null) {
+            throw new IllegalArgumentException("Secondary comparator는 null일 수 없습니다");
+        }
+
         this.comparator = this.comparator.thenComparing(secondaryComparator);
         return this;
     }
 
     public Comparator<Product> build() {
+        if(this.comparator == null) {
+            throw new IllegalStateException("정렬 기준이 설정되지 않았습니다");
+        }
+
         if(direction == SortDirection.DESC) {
             return comparator.reversed();
         }
@@ -79,7 +136,7 @@ class ProductComparators {
 
     // 평점 내림차순(높은 평점이 먼저)
     public static final Comparator<Product> BY_RATING =
-            Comparator.comparingDouble(Product::getRating).reversed();
+            Comparator.comparingDouble(Product::getRating);
 
     // 재고 오름차순
     public static final Comparator<Product> BY_STOCK =
@@ -124,6 +181,8 @@ class ProductService {
         products.add(new Product("P002", "마우스", 30000, 15, 4.8));
         products.add(new Product("P003", "키보드", 80000, 8, 4.2));
         products.add(new Product("P004", "모니터", 300000, 3, 4.7));
+        products.add(new Product("P005", "헤드셋", 50000, 12, 4.5));
+        products.add(new Product("P006", "웹캠", 150000, 7, 4.7));
     }
 
     // 문제: 정렬 기준이 if-else로 하드코딩됨
