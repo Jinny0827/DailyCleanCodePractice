@@ -27,10 +27,34 @@ public class Day38ApiCache {
         // 캐시 무효화 후 재조회
         client.invalidateUrl("/users/123");
         client.request("GET", "/users/123");
+
+
+
+        System.out.println("\n=== 캐시 키 생성 테스트 ===");
+        CacheKeyGenerator keyGen = new CacheKeyGenerator();
+        
+        // 쿼리 파라미터 순서가 달라도 같은 키 생성
+        Map<String, String> params1 = new HashMap<>();
+        params1.put("id", "123");
+        params1.put("sort", "name");
+
+        Map<String, String> params2 = new HashMap<>();
+        params2.put("sort", "name");
+        params2.put("id", "123");
+
+        HttpRequest req1 = new HttpRequest("GET", "/users", params1, null, null);
+        HttpRequest req2 = new HttpRequest("GET", "/users", params2, null, null);
+
+        String key1 = keyGen.generate(req1);
+        String key2 = keyGen.generate(req2);
+
+        System.out.println("Key 1: " + key1);
+        System.out.println("Key 2: " + key2);
+        System.out.println("동일한가? " + key1.equals(key2)); // true 여야 함
     }
 }
 
-// 캐시 키 생성 전략
+// 요청에 대한 객체 생성
 class HttpRequest {
     private String method;
     private String url;
@@ -77,6 +101,46 @@ class HttpRequest {
                 '}';
     }
 }
+
+class CacheKeyGenerator {
+    public String generate(HttpRequest request) {
+        StringBuilder keyBuilder = new StringBuilder();
+
+        // HTTP 메서드 추가
+        keyBuilder.append(request.getMethod()).append(".");
+        
+        // URL 추가
+        keyBuilder.append(request.getUrl());
+
+        // 쿼리 파라미터 추가
+        Map<String, String> params = request.getQueryParams();
+        if(params != null && !params.isEmpty()) {
+
+            // url?key=value&key=value 형태로 저장
+            keyBuilder.append("?");
+
+            params.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey())
+                    .forEach(entry -> {
+                        keyBuilder.append(entry.getKey())
+                                .append("=")
+                                .append(entry.getValue())
+                                .append("&");
+                    });
+            
+            // 마지막 key,value는 & 제거 (마지막 글자 삭제 deleteCharAt)
+            keyBuilder.deleteCharAt(keyBuilder.length() - 1);
+        }
+
+        // body가 있으면 추가 (POST, PUT 등)
+        if(request.getBody() != null && !request.getBody().isEmpty()) {
+            keyBuilder.append(":").append(request.getBody());
+        }
+
+        return keyBuilder.toString();
+    }
+}
+
 
 class ApiClient {
     private Map<String, String> cache = new HashMap<>();
