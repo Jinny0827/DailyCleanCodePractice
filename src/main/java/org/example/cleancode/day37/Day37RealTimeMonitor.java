@@ -11,6 +11,10 @@ import java.util.*;
  * - 타이머가 정리되지 않음
  * - 콜백 참조가 계속 유지됨
  * - 리소스 정리 시점이 불명확
+ *
+ * 폴링 = 주기적으로 데이터를 확인하는 것
+ * 주기적(타이머)를 사용하고 정리하고 반복
+ *
  */
 public class Day37RealTimeMonitor {
 
@@ -20,20 +24,21 @@ public class Day37RealTimeMonitor {
 
         // 구독자 등록
         Subscriber sub1 = new Subscriber("SUB-001");
-        Subscriber sub2 = new Subscriber("SUB-002");
-
         Subscription subscription1 = monitor.subscribe(sub1);
-        Subscription subscription2 = monitor.subscribe(sub2);
 
+        PollingTask polling = new PollingTask(monitor);
+        polling.start();
 
-        // 데이터 업데이트
-        monitor.updateData("Temperature", 25.5);
+        // 3초 대기 (데이터 3번 업데이트됨)
+        Thread.sleep(3000);
 
-        subscription1.dispose();
+        // 폴링 중지
+        polling.dispose();
 
-        // 미정리 -> 정리 후 다시 업데이트
-        monitor.updateData("Humidity", 60.0);
-
+        // 1초 더 대기(업데이트 안됨)
+        Thread.sleep(1000);
+        
+        // 전체 자원 정리
         monitor.dispose();
     }
 
@@ -105,6 +110,41 @@ class Subscription implements Disposable {
     }
 }
 
+// 타이머 추가
+class PollingTask implements Disposable {
+    private Timer timer;
+    private DataMonitor monitor;
+
+    public PollingTask(DataMonitor monitor) {
+        this.monitor = monitor;
+    }
+
+    // 타이머 시작
+    public void start() {
+        timer = new Timer();
+
+        // 즉시 시작, 1초마다 실행처리
+        timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+               // 1초마다 랜덤 업데이트
+               double randomTemp = 20 + Math.random() * 10;
+               monitor.updateData("Temperature", randomTemp);
+            }
+        }, 0, 1000);
+
+        System.out.println("⏰ 폴링 시작");
+    }
+
+    @Override
+    public void dispose() {
+        if(timer != null) {
+            timer.cancel();
+            timer = null;
+            System.out.println("⏰ 폴링 중지");
+        }
+    }
+}
 
 
 class Subscriber {
