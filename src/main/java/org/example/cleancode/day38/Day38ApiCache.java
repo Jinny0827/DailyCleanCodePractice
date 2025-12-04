@@ -28,6 +28,7 @@ public class Day38ApiCache {
         client.invalidateUrl("/users/123");
         client.request("GET", "/users/123");
 
+        //-------------------------------------------------------------------------------------------------------
 
 
         System.out.println("\n=== 캐시 키 생성 테스트 ===");
@@ -51,8 +52,185 @@ public class Day38ApiCache {
         System.out.println("Key 1: " + key1);
         System.out.println("Key 2: " + key2);
         System.out.println("동일한가? " + key1.equals(key2)); // true 여야 함
+
+        //-------------------------------------------------------------------------------------------------------
+
+        System.out.println("\n=== Step 2: 캐시 정책 테스트 ===");
+        CachePolicy policy = new DefaultCachePolicy();
+
+        // 1.GET 요청
+        HttpRequest getReq = new HttpRequest("GET", "/users", null, null, null);
+        System.out.println("GET 캐싱 가능? " + policy.shouldCache(getReq)); // true
+        System.out.println("TTL: " + policy.getTtl(getReq) + "초");
+
+        // 2. POST 요청
+        HttpRequest postReq = new HttpRequest("POST", "/users", null, null, "{}");
+        System.out.println("POST 캐싱 가능? " + policy.shouldCache(postReq)); // false
+
+        // 3. Cache-Contro: no-cache
+        Map<String, String> noCacheHeaders = new HashMap<>();
+        noCacheHeaders.put("Cache-Control", "no-cache");
+        HttpRequest noCacheReq = new HttpRequest("GET", "/users", null, noCacheHeaders, null);
+        System.out.println("no-cache 캐싱 가능? " + policy.shouldCache(noCacheReq)); // false
+
+
+        // 4. Cache-Control: max-age=600
+        Map<String, String> maxAgeHeaders = new HashMap<>();
+        maxAgeHeaders.put("Cache-Control", "max-age=600");
+        HttpRequest maxAgeReq = new HttpRequest("GET", "/users", null, maxAgeHeaders, null);
+        System.out.println("max-age TTL: " + policy.getTtl(maxAgeReq) + "초"); // 600
+
+        //-------------------------------------------------------------------------------------------------------
+
+        System.out.println("\n=== Step 3: CachedResponse 테스트 ===");
+        
+        // 1. 캐시생성(ttl = 2초)
+        CachedResponse cached = new CachedResponse(
+                "{\"id\":123}",
+                "etag-abc123",
+                System.currentTimeMillis(),
+                2 
+        );
+
+        System.out.println("생성 직후 만료? " + cached.isExpired()); // false
+        System.out.println("재검증 필요? " + cached.needsRevalidation()); // false
+
+        // 2초 ttl을 3초 슬립으로 만료시키기 (ttl 초과)
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        System.out.println("3초 후 만료? " + cached.isExpired()); // true
+        System.out.println("재검증 필요? " + cached.needsRevalidation()); // true (ETag 있음)
+
+        // 3. HTTP 응답 테스트
+        Map<String, String> responseHeaders = new HashMap<>();
+        responseHeaders.put("ETag", "etag-xyz789");
+        responseHeaders.put("Last-Modified", String.valueOf(System.currentTimeMillis()));
+
+        HttpResponse response = new HttpResponse(200, "{\"data\":\"ok\"}", responseHeaders);
+        System.out.println("응답 상태: " + response.getStatusCode());
+        System.out.println("ETag: " + response.getHeader("ETag"));
+
+        // 304 Not Modified 처리
+        HttpResponse notModified = new HttpResponse(304, "", null);
+        System.out.println("304 응답? " + notModified.isNotModified());
     }
 }
+
+// 캐시 정책 인터페이스
+interface CachePolicy {
+    boolean shouldCache(HttpRequest request);
+
+    // 초단위
+    long getTtl(HttpRequest request);
+}
+
+
+class DefaultCachePolicy implements CachePolicy {
+    
+    // 5분 설정
+    private static final long DEFAULT_TTL = 300;
+
+    @Override
+    public boolean shouldCache(HttpRequest request) {
+        String method = request.getMethod();
+
+        // GET, HEAD만 캐싱
+        if(!method.equals("GET") && !method.equals("HEAD")) {
+            return false;
+        }
+        
+        // Cache-Control: no-cache 체크
+        Map<String, String> headers = request.getHeaders();
+        if(headers != null) {
+            String cacheControl = headers.get("Cache-Control");
+            if(cacheControl != null && cacheControl.contains("no-cache")) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    @Override
+    public long getTtl(HttpRequest request) {
+        // Cache max-age 파싱
+        Map<String, String> headers = request.getHeaders();
+        if(headers != null) {
+            String cacheControl = headers.get("Cache-Control");
+            if(cacheControl != null && cacheControl.contains("max-age=")) {
+                //max-age=600 에서 숫자 추출
+                String[] parts = cacheControl.split("max-age=");
+                if(parts.length > 1) {
+                    try {
+                        String maxAge = parts[1].split(",")[0].trim();
+                        return Long.parseLong(maxAge);
+                    }
+                    catch (NumberFormatException e) {
+                        // 파싱 실패시 기본 값
+                    }
+                }
+            }
+        }
+        
+        
+        
+        return DEFAULT_TTL;
+    }
+}
+
+// 캐시 정보 질의 응답 클래스
+class CachedResponse {
+    private final String body;
+    private final String etag;
+    private final long lastModified;
+    private final long  cachedAt;
+    private final long ttl;
+
+    public CachedResponse(String body, String etag, long lastModified, long ttl) {
+        this.body = body;
+        this.etag = etag;
+        this.lastModified = lastModified;
+        this.cachedAt = System.currentTimeMillis();
+        this.ttl = ttl;
+    }
+
+    // 캐시 만료 여부
+    public boolean isExpired() {
+        long now = System.currentTimeMillis();
+        // 현재시간 - 캐시된시간 / 1000
+        long elapsedSeconds = (now - cachedAt / 1000);
+        return elapsedSeconds > ttl;
+    }
+    
+    // 재검증이 필요한지 (만료되었지만 eTag 존재)
+    public boolean needsRevalidation() {
+        return isExpired() && (etag != null || lastModified > 0);
+    }
+
+    public String getBody() {
+        return body;
+    }
+
+    public String getEtag() {
+        return etag;
+    }
+
+    public long getLastModified() {
+        return lastModified;
+    }
+
+    @Override
+    public String toString() {
+        return String.format("CachedResponse{etag='%s', expired=%b}",
+                etag, isExpired());
+    }
+}
+
+
 
 // 요청에 대한 객체 생성
 class HttpRequest {
@@ -100,6 +278,39 @@ class HttpRequest {
                 ", body='" + body + '\'' +
                 '}';
     }
+}
+
+class HttpResponse {
+    private final int statusCode;
+    private final String body;
+    private final Map<String, String> headers;
+
+    public HttpResponse(int statusCode, String body, Map<String, String> headers) {
+        this.statusCode = statusCode;
+        this.body = body;
+        this.headers = headers != null ? headers : new HashMap<>();
+    }
+
+    public int getStatusCode() {
+        return statusCode;
+    }
+
+    public String getBody() {
+        return body;
+    }
+
+    public Map<String, String> getHeaders() {
+        return headers;
+    }
+
+    public String getHeader(String name) {
+        return headers.get(name);
+    }
+
+    public boolean isNotModified() {
+        return statusCode == 304;
+    }
+
 }
 
 class CacheKeyGenerator {
