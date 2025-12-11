@@ -117,6 +117,35 @@ public class Day38ApiCache {
         // 304 Not Modified 처리
         HttpResponse notModified = new HttpResponse(304, "", null);
         System.out.println("304 응답? " + notModified.isNotModified());
+
+        //-------------------------------------------------------------------------------------------------------
+
+        System.out.println("\n=== Step 4: 최종 통합 테스트 ===");
+
+        ApiClient finalClient = new ApiClient();
+
+        Map<String, String> params = new HashMap<>();
+        params.put("id", "456");
+
+        System.out.println("--- 첫 번째 요청 ---");
+        finalClient.request("GET", "/products", params, null);
+
+        System.out.println("\n--- 두 번째 요청 (캐시 히트) ---");
+        finalClient.request("GET", "/products", params, null);
+
+        System.out.println("\n⏳ 3초 대기 중...");
+        try {
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        // 4. 패턴 무효화
+        System.out.println("\n--- 패턴 기반 무효화 ---");
+        finalClient.invalidatePattern("/products");
+
+        System.out.println("\n--- 무효화 후 재요청 (캐시 미스) ---");
+        finalClient.request("GET", "/products", params, null);
     }
 }
 
@@ -197,12 +226,45 @@ class CachedResponse {
         this.cachedAt = System.currentTimeMillis();
         this.ttl = ttl;
     }
+    
+    // 팩토리 메서드
+    public static CachedResponse from(HttpResponse response, long ttl) {
+        String etag = response.getHeader("ETag");
+        String lastModifier = response.getHeader("Last-Modified");
+
+        long lastModified = 0;
+        if(lastModifier != null) {
+            try {
+                lastModified = Long.parseLong(lastModifier);
+            } catch (NumberFormatException e) {
+                // 파싱 실패 시 0으로 유지
+            }
+        }
+
+        return new CachedResponse(
+                response.getBody(),
+                etag,
+                lastModified,
+                ttl
+        );
+    }
+
+    // ttl 갱신 -> 304 응답 시
+    public CachedResponse withRefreshedTtl(long newTtl) {
+        return new CachedResponse(
+                this.body,
+                this.etag,
+                this.lastModified,
+                newTtl
+        );
+    }
+    
 
     // 캐시 만료 여부
     public boolean isExpired() {
         long now = System.currentTimeMillis();
         // 현재시간 - 캐시된시간 / 1000
-        long elapsedSeconds = (now - cachedAt / 1000);
+        long elapsedSeconds = (now - cachedAt) / 1000;
         return elapsedSeconds > ttl;
     }
     
@@ -354,45 +416,129 @@ class CacheKeyGenerator {
 
 
 class ApiClient {
-    private Map<String, String> cache = new HashMap<>();
+    private Map<String, CachedResponse> cache = new HashMap<>();
+    private final CacheKeyGenerator keyGenerator = new CacheKeyGenerator();
+    private final CachePolicy policy = new DefaultCachePolicy();
+
 
     public String request(String method, String url) {
         return request(method, url, null);
     }
 
     public String request(String method, String url, String body) {
-        // 문제 1: 캐시 키 생성이 중복됨
-        String cacheKey = method + ":" + url;
-        if (body != null) {
-            cacheKey += ":" + body;
+        return request(method, url, null, body);
+    }
+
+    public String request(String method, String url, Map<String, String> queryParam, String body) {
+        
+        // 요청 객체 생성
+        HttpRequest request = new HttpRequest(method, url, queryParam, null ,body);
+
+        // 캐시 키 생성
+        String cacheKey = keyGenerator.generate(request);
+
+        // 캐시 정책 확인
+        if(!policy.shouldCache(request)) {
+            System.out.println("캐싱 불가" + method);
+            HttpResponse response = callApi(request);
+            return response.getBody();
         }
 
-        // 문제 2: GET만 캐싱 (메서드별 정책 없음)
-        if (method.equals("GET") && cache.containsKey(cacheKey)) {
+        // 캐시 조회 (캐시키를 통한)
+        CachedResponse cached = cache.get(cacheKey);
+
+        // 캐시 히트 & 유효
+        if (cached != null && !cached.isExpired()) {
             System.out.println("💾 캐시 히트: " + url);
-            return cache.get(cacheKey);
+            return cached.getBody();
         }
 
-        // 실제 API 호출
+        // 캐시 만료 -> 재검증
+        if (cached != null && cached.needsRevalidation()) {
+            System.out.println("🔄 재검증 시도: " + url);
+            HttpResponse response = callApiWithRevalidation(request, cached);
+
+            // 304 Not Modified
+            if (response.isNotModified()) {
+                System.out.println("✅ 304 Not Modified - 캐시 재사용");
+                long newTtl = policy.getTtl(request);
+                CachedResponse refreshed = cached.withRefreshedTtl(newTtl);
+                cache.put(cacheKey, refreshed);
+                return cached.getBody();
+            }
+
+            return updateCache(cacheKey, response, request);
+        }
+
         System.out.println("🌐 API 호출: " + method + " " + url);
-        String response = callApi(method, url, body);
+        HttpResponse response = callApi(request);
+        return updateCache(cacheKey, response, request);
+    }
+    
+    // 조건부 요청 (If-None-Match 헤더)
+    private HttpResponse callApiWithRevalidation(HttpRequest request, CachedResponse cached) {
+        Map<String, String> headers = new HashMap<>();
 
-        // 문제 3: 모든 GET을 무조건 캐싱
-        if (method.equals("GET")) {
-            cache.put(cacheKey, response);
+        if(cached.getEtag() != null) {
+            headers.put("If-None-Match", cached.getEtag());
         }
 
-        return response;
+        if(cached.getLastModified() > 0) {
+            headers.put("If-Modified-Since", String.valueOf(cached.getLastModified()));
+        }
+
+        //헤더 추가된 새 요청
+        HttpRequest revalidationReq = new HttpRequest(
+                request.getMethod(),
+                request.getUrl(),
+                request.getQueryParams(),
+                headers,
+                request.getBody()
+        );
+
+        return callApi(revalidationReq);
     }
 
-    private String callApi(String method, String url, String body) {
-        // API 호출 시뮬레이션
-        return "{\"id\":123,\"name\":\"John\"}";
+    // 캐시 저장 메서드
+    private String updateCache(String cacheKey, HttpResponse response, HttpRequest request) {
+        long ttl = policy.getTtl(request);
+        CachedResponse cached = CachedResponse.from(response, ttl);
+        cache.put(cacheKey, cached);
+        System.out.println("📦 캐시 저장 (TTL: " + ttl + "초)");
+        return response.getBody();
     }
+
+
+    private HttpResponse callApi(HttpRequest request) {
+        Map<String, String> responseHeaders = new HashMap<>();
+        responseHeaders.put("ETag", "etag-" + System.currentTimeMillis());
+        responseHeaders.put("Last-Modified", String.valueOf(System.currentTimeMillis()));
+
+        if(request.getHeaders() != null &&
+            request.getHeaders().containsKey("If-None-Match")) {
+            if(Math.random() < 0.3) {
+                System.out.println("   → 서버: 304 Not Modified 응답");
+                return new HttpResponse(304, "", responseHeaders);
+            }
+        }
+
+        return new HttpResponse(200, "{\"id\":123,\"name\":\"John\"}", responseHeaders);
+    }
+    
+    // 패턴 기반 캐시 무효화
+    public void invalidatePattern(String urlPattern) {
+        final int[] removed = {0};
+        cache.entrySet().removeIf(entry -> {
+            boolean matches = entry.getKey().contains(urlPattern);
+            if(matches) removed[0]++;
+            return matches;
+        });
+        System.out.println("🗑️ 캐시 무효화: " + removed[0] + "건 삭제 (패턴: " + urlPattern + ")");
+    }
+
 
     // 문제 4: URL만으로 무효화 (쿼리 파라미터 고려 안함)
     public void invalidateUrl(String url) {
-        cache.remove("GET:" + url);
-        System.out.println("🗑️ 캐시 무효화: " + url);
+        invalidatePattern(url);
     }
 }
