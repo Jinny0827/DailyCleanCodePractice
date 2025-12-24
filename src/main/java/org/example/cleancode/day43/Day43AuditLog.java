@@ -15,26 +15,52 @@ import java.util.*;
  */
 public class Day43AuditLog {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
        AuditLogger logger = new AuditLogger();
 
         logger.log(AuditEventType.USER_LOGIN, "user123", "Login from 192.168.1.1");
+        Thread.sleep(100);
+
         logger.log(AuditEventType.ORDER_CREATE, "user123", "Order: ORD-001, Amount: 50000");
+        Thread.sleep(100);
+
+        long midTime = System.currentTimeMillis();
+        Thread.sleep(100);
+
         logger.log(AuditEventType.ORDER_CANCEL, "user456", "Order: ORD-002");
+        Thread.sleep(100);
+
         logger.log(AuditEventType.USER_LOGOUT, "user123", "Logout");
 
-        logger.printAll();
 
+        // === 테스트 1: 시간 범위 조회 ===
+        System.out.println("\n=== midTime 이후 로그 ===");
+        List<AuditLog> recentLogs = logger.getLogsBetween(midTime, System.currentTimeMillis());
+        recentLogs.forEach(System.out::println);
 
-        // 사용자별 조회
-        System.out.println("\n=== user123 로그 ===");
-        List<AuditLog> user123Logs = logger.getLogsByUser("user123");
+        // === 테스트 2: 쿼리 빌더 - 단일 조건 ===
+        System.out.println("\n=== user123 로그 (쿼리 빌더) ===");
+        List<AuditLog> user123Logs = logger.query()
+                .byUser("user123")
+                .execute();
         user123Logs.forEach(System.out::println);
 
-        // 이벤트 타입별 조회
-        System.out.println("\n=== 주문 생성 로그 ===");
-        List<AuditLog> orderLogs = logger.getLogsByEventType(AuditEventType.ORDER_CREATE);
-        orderLogs.forEach(System.out::println);
+
+        // === 테스트 3: 쿼리 빌더 - 복합 조건 ===
+        System.out.println("\n=== user123의 주문 생성 로그 ===");
+        List<AuditLog> user123Orders = logger.query()
+                .byUser("user123")
+                .byEventType(AuditEventType.ORDER_CREATE)
+                .execute();
+        user123Orders.forEach(System.out::println);
+
+
+        // === 테스트 4: 개수만 확인 ===
+        System.out.println("\n=== user456 로그 개수 ===");
+        int count = logger.query()
+                .byUser("user456")
+                .count();
+        System.out.println("총 " + count + "건");
     }
 
 }
@@ -104,6 +130,66 @@ class AuditLog {
     }
 }
 
+class AuditQuery {
+    private final List<AuditLog> allLogs;
+    private List<AuditLog> filteredLogs;
+
+    public AuditQuery(List<AuditLog> logs) {
+        this.allLogs = new ArrayList<>(logs);
+        this.filteredLogs = new ArrayList<>(logs);
+    }
+
+    // 사용자 필터
+    public AuditQuery byUser(String userId) {
+        List<AuditLog> result = new ArrayList<>();
+        for (AuditLog log : filteredLogs) {
+            if(log.getUserId().equals(userId)) {
+                result.add(log);
+            }
+        }
+
+        filteredLogs = result;
+        // 메서드 체이닝을 위한 본인 반환
+        return this;
+    }
+
+    // 이벤트 타입 필터
+    public AuditQuery byEventType(AuditEventType eventType) {
+        List<AuditLog> result = new ArrayList<>();
+        for (AuditLog log : filteredLogs) {
+            if(log.getEventType() == eventType) {
+                result.add(log);
+            }
+        }
+
+        filteredLogs = result;
+        return this;
+    }
+
+    // 시간 범위 필터
+    public AuditQuery between(long startTime, long endTime) {
+        List<AuditLog> result = new ArrayList<>();
+        for (AuditLog log : filteredLogs) {
+            long timestamp = log.getTimestamp();
+            if (timestamp >= startTime && timestamp <= endTime) {
+                result.add(log);
+            }
+        }
+        filteredLogs = result;
+        return this;
+    }
+
+    // 최종 실행
+    public List<AuditLog> execute() {
+        return new ArrayList<>(filteredLogs);
+    }
+
+    // 갯수 반환
+    public int count() {
+        return filteredLogs.size();
+    }
+}
+
 
 class AuditLogger {
     // 정형화된 데이터 구조(AuditLog 객체에 맞게)
@@ -145,7 +231,26 @@ class AuditLogger {
 
         return result;
     }
+
+    // 시간 범위 조회
+    public List<AuditLog> getLogsBetween(long startTime, long endTime) {
+        List<AuditLog> result = new ArrayList<>();
+        for (AuditLog log : logs) {
+            long timestamp = log.getTimestamp();
+            if (timestamp >= startTime && timestamp <= endTime) {
+                result.add(log);
+            }
+        }
+
+        return result;
+    }
     
+    // 쿼리빌더 시작점
+    public AuditQuery query() {
+        return new AuditQuery(logs);
+    }
+
+
     // 전체 출력
     public void printAll() {
         System.out.println("\n=== 전체 로그 (" + logs.size() + "건) ===");
