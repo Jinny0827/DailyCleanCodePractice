@@ -35,86 +35,10 @@ public class Day46ProductManagement {
         service.printProductList();
         service.printCategoryStats();
         service.printLowStockAlert();
+
     }
 
 }
-
-// Command 인터페이스 (쓰기)
-interface Command {
-    String getCommandId();
-}
-
-// 상품 생성 Command 구현
-class CreatedProductCommand implements Command {
-    private final String commandId;
-    private final String productId;
-    private final String name;
-    private final int price;
-    private final String category;
-    private final int stock;
-
-    public CreatedProductCommand(String commandId, String productId, String name, int price, String category, int stock) {
-        this.commandId = commandId;
-        this.productId = productId;
-        this.name = name;
-        this.price = price;
-        this.category = category;
-        this.stock = stock;
-    }
-
-    @Override
-    public String getCommandId() {
-        return commandId;
-    }
-
-    public String getProductId() {
-        return productId;
-    }
-
-    public String getName() {
-        return name;
-    }
-
-    public int getPrice() {
-        return price;
-    }
-
-    public String getCategory() {
-        return category;
-    }
-
-    public int getStock() {
-        return stock;
-    }
-}
-
-// 상품 업데이트 Command 구현
-class UpdateStockCommand implements Command {
-    private final String commandId;
-    private final String productId;
-    private final int newStock;
-
-
-    public UpdateStockCommand(String productId, int newStock) {
-        this.commandId = UUID.randomUUID().toString();
-        this.productId = productId;
-        this.newStock = newStock;
-    }
-
-    @Override
-    public String getCommandId() {
-        return commandId;
-    }
-
-    public String getProductId() {
-        return productId;
-    }
-
-    public int getNewStock() {
-        return newStock;
-    }
-}
-
 
 // 도메인 이벤트 생성
 interface DomainEvent {
@@ -217,12 +141,14 @@ class StockUpdatedEvent implements DomainEvent {
     public long getTimestamp() {
         return timestamp;
     }
+
+    public int getOldStock() {
+        return oldStock;
+    }
 }
 
 
 
-
-// 문제: 쓰기용 엔티티를 읽기에도 그대로 사용
 class Product {
     private String id;
     private String name;
@@ -336,6 +262,10 @@ class ProductSummary {
     public int getStock() {
         return stock;
     }
+
+    public void updateStock(int newStock) {
+        this.stock = newStock;
+    }
 }
 
 // 카테고리 통계 (DTO)
@@ -381,7 +311,12 @@ class CategoryStatsView {
     private final Map<String, CategoryStats> stats;
     // 상품 정보 캐시 (price를 알기 위한)
     private final Map<String, ProductInfo> productCache;
-    
+
+    public CategoryStatsView() {
+        this.stats = new HashMap<>();
+        this.productCache = new HashMap<>();
+    }
+
     // 상품 생성 이벤트
     public void on(ProductCreatedEvent event) {
         // 캐시에 저장 (나중에 StockUpdatedEvent 에서 사용)
@@ -390,7 +325,7 @@ class CategoryStatsView {
                 event.getPrice(),
                 event.getCategory()
         );
-        ProductCache.put(event.getProductId(), info);
+        productCache.put(event.getProductId(), info);
 
         // 통계 업데이트
         CategoryStats categoryStats = stats.computeIfAbsent(
@@ -431,23 +366,140 @@ class CategoryStatsView {
     }
 }
 
+// 상품 정보 캐시용 클래스
+class ProductInfo {
+    private final String productId;
+    private final int price;
+    private final String category;
 
+    public ProductInfo(String productId, int price, String category) {
+        this.productId = productId;
+        this.price = price;
+        this.category = category;
+    }
+
+    public int getPrice() {
+        return price;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+}
+
+// 재고 부족 상품 자동 필터링
+// 목표: 재고 10개 미만 상품을 자동으로 필터링!
+class LowStockView {
+    private static final int LOW_STOCK_THRESHOLD = 10;
+
+    // 재고 부족 상품만 저장 (자동 필터링)
+    private final Map<String, ProductSummary> lowStockProducts;
+    
+    // 상품 정보 캐시 추가
+    private final Map<String, String> productNames;
+
+    public LowStockView() {
+        this.lowStockProducts = new HashMap<>();
+        this.productNames = new HashMap<>();
+    }
+
+    // 재고 생성 이벤트
+    public void on(ProductCreatedEvent event) {
+        // 상품명 캐시 저장
+        productNames.put(event.getProductId(), event.getName());
+
+        if(event.getStock() < LOW_STOCK_THRESHOLD) {
+            ProductSummary summary = new ProductSummary(
+                event.getProductId(),
+                    event.getName(),
+                    event.getStock()
+            );
+            lowStockProducts.put(event.getProductId(), summary);
+            System.out.println("📊 LowStockView 업데이트 (추가: " + event.getName() + ")");
+        }
+    }
+    
+    // 재고 업데이트 이벤트
+    public void on(StockUpdatedEvent event) {
+        String productId = event.getProductId();
+
+        if (event.getNewStock() < LOW_STOCK_THRESHOLD) {
+            String name = productNames.get(event.getProductId());
+            if(name != null) {
+                ProductSummary summary = new ProductSummary(
+                    event.getProductId(),
+                        name,
+                        event.getNewStock()
+                );
+
+                lowStockProducts.put(event.getProductId(), summary);
+                System.out.println("📊 LowStockView 업데이트 (추가)");
+            }
+
+
+        } else {
+            // 재고가 충분했으면 제거
+            if(lowStockProducts.remove(productId) != null ) {
+                System.out.println("📊 LowStockView 업데이트 (제거: " + productId + ")");
+            }
+
+        }
+    }
+
+    public List<ProductSummary> getLowStockProducts() {
+        return new ArrayList<>(lowStockProducts.values());
+    }
+
+}
+
+
+
+// 목표: ProductService가 Command를 받아서 → 이벤트 발행 → 뷰들 자동 업데이트
 class ProductService {
     // 문제: 읽기/쓰기가 같은 저장소
     private Map<String, Product> products = new HashMap<>();
 
+    private ProductListView productListView = new ProductListView();
+    private CategoryStatsView categoryStatsView = new CategoryStatsView();
+    private LowStockView lowStockView = new LowStockView();
+
     // Command: 쓰기 작업
     public void createProduct(String id, String name, int price,
                               String category, int stock) {
+
         Product product = new Product(id, name, price, category, stock);
         products.put(id, product);
+
+        // 이벤트 발행 추가
+        ProductCreatedEvent event = new ProductCreatedEvent(
+            id, name, price, category, stock
+        );
+
+        // 이벤트 발행 후 뷰 추가
+        productListView.on(event);
+        categoryStatsView.on(event);
+        lowStockView.on(event);
+        
         System.out.println("✓ 상품 등록: " + name);
     }
 
     public void updateStock(String id, int newStock) {
         Product product = products.get(id);
         if (product != null) {
+            int oldStock = product.getStock();
             product.updateStock(newStock);
+
+            // 이벤트 발행
+            StockUpdatedEvent event = new StockUpdatedEvent(
+                id, oldStock, newStock
+            );
+
+            // 이벤트 발행 후 뷰 추가
+            productListView.on(event);
+            categoryStatsView.on(event);
+            lowStockView.on(event);
+
+
             System.out.println("✓ 재고 업데이트: " + id);
         }
     }
@@ -455,7 +507,7 @@ class ProductService {
     // Query: 읽기 작업 (문제: 매번 계산, 느림)
     public void printProductList() {
         System.out.println("\n=== 상품 목록 ===");
-        for (Product p : products.values()) {
+        for (ProductSummary p : productListView.getAll()) {
             System.out.println(p.getId() + " - " + p.getName() +
                     " (재고: " + p.getStock() + ")");
         }
@@ -464,30 +516,22 @@ class ProductService {
     // 문제: 매번 전체 순회하며 계산
     public void printCategoryStats() {
         System.out.println("\n=== 카테고리별 통계 ===");
-        Map<String, Integer> categoryCount = new HashMap<>();
-        Map<String, Integer> categoryValue = new HashMap<>();
+        Map<String, CategoryStats> allStats = categoryStatsView.getAllStats();
 
-        for (Product p : products.values()) {
-            String cat = p.getCategory();
-            categoryCount.put(cat, categoryCount.getOrDefault(cat, 0) + 1);
-            categoryValue.put(cat,
-                    categoryValue.getOrDefault(cat, 0) + p.getPrice() * p.getStock());
-        }
-
-        for (String cat : categoryCount.keySet()) {
-            System.out.println(cat + ": " + categoryCount.get(cat) + "개, " +
-                    "재고 가치 " + categoryValue.get(cat) + "원");
+        for (Map.Entry<String, CategoryStats> entry : allStats.entrySet()) {
+            CategoryStats stats = entry.getValue();
+            System.out.println(entry.getKey() + ": " +
+                    stats.getProductCount() + "개, " +
+                    "재고 가치 " + stats.getTotalValue() + "원");
         }
     }
 
     // 문제: 매번 필터링
     public void printLowStockAlert() {
         System.out.println("\n=== 재고 부족 알림 ===");
-        for (Product p : products.values()) {
-            if (p.getStock() < 10) {
-                System.out.println("⚠️ " + p.getName() + " 재고 부족 (" +
-                        p.getStock() + "개)");
-            }
+        for (ProductSummary p : lowStockView.getLowStockProducts()) {
+            System.out.println("⚠️ " + p.getName() + " 재고 부족 (" +
+                    p.getStock() + "개)");
         }
     }
 }
