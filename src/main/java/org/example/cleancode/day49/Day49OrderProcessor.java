@@ -9,9 +9,22 @@ import java.util.List;
  */
 public class Day49OrderProcessor {
 
-    public static void main(String[] args) {
+    private final DiscountPolicyFactory discountPolicyFactory;
+    private final PaymentFeePolicyFactory paymentFeePolicyFactory;
+    private final ShippingFeePolicy shippingFeePolicy;
+    private final NotificationService notificationService;
 
 
+    public Day49OrderProcessor(
+            DiscountPolicyFactory discountPolicyFactory,
+            PaymentFeePolicyFactory paymentFeePolicyFactory,
+            ShippingFeePolicy shippingFeePolicy,
+            NotificationService notificationService
+    ) {
+        this.discountPolicyFactory = discountPolicyFactory;
+        this.paymentFeePolicyFactory = paymentFeePolicyFactory;
+        this.shippingFeePolicy = shippingFeePolicy;
+        this.notificationService = notificationService;
     }
 
     public double processOrder(Order order, CustomerType customerType, PaymentMethod paymentMethod) {
@@ -21,10 +34,6 @@ public class Day49OrderProcessor {
         total = addShippingFee(total, customerType);
         notifyIfNeeded(customerType, total);
         return total;
-    }
-
-    private void sendEmail(String message) {
-        System.out.println("Email sent: " + message);
     }
 
     private double calculateSubtotal(Order order) {
@@ -38,47 +47,22 @@ public class Day49OrderProcessor {
     }
 
     private double applyDiscount(double total, CustomerType customerType) {
-        if (customerType == CustomerType.VIP) {
-            total *= PriceConstants.VIP_DISCOUNT_RATE;
-        } else if (customerType == CustomerType.REGULAR) {
-            total *= PriceConstants.REGULAR_DISCOUNT_RATE;
-        } else if (customerType == CustomerType.NEW) {
-            total *= PriceConstants.NEW_DISCOUNT_RATE;
-        }
-
-        return total;
+        DiscountPolicy policy = this.discountPolicyFactory.getPolicy(customerType);
+        return policy.apply(total);
     }
 
     private double applyPayment(double total, PaymentMethod paymentMethod) {
-        if (paymentMethod == PaymentMethod.CARD) {
-            total *= PriceConstants.CARD_FEE_RATE;
-        } else if (paymentMethod == PaymentMethod.CASH) {
-            total *= PriceConstants.CASH_DISCOUNT_RATE;
-        } else if (paymentMethod == PaymentMethod.POINT) {
-            if (total > PriceConstants.POINT_FEE_THRESHOLD) {
-                total *= PriceConstants.POINT_FEE_RATE;
-            }
-        }
-
-        return total;
+        PaymentFeePolicy policy = this.paymentFeePolicyFactory.getPolicy(paymentMethod);
+        return policy.apply(total);
     }
 
 
     private double addShippingFee(double total, CustomerType customerType) {
-        if (total < PriceConstants.BASIC_SHIPPING_THRESHOLD) {
-            total += PriceConstants.HIGH_SHIPPING_FEE;
-        } else if (total < PriceConstants.FREE_SHIPPING_THRESHOLD && customerType != CustomerType.VIP) {
-            total += PriceConstants.LOW_SHIPPING_FEE;
-        }
-
-        return total;
+       return shippingFeePolicy.calculate(total, customerType);
     }
 
     private void notifyIfNeeded(CustomerType customerType, double total) {
-        System.out.println("Order processed: " + total);
-        if (customerType == CustomerType.VIP) {
-            sendEmail("VIP order completed");
-        }
+        notificationService.notifyOrderComplete(customerType, total);
     }
 }
 
@@ -94,6 +78,20 @@ class VipDiscountPolicy implements DiscountPolicy {
     }
 }
 
+class RegularDiscountPolicy implements DiscountPolicy {
+    @Override
+    public double apply(double amount) {
+        return amount * PriceConstants.REGULAR_DISCOUNT_RATE;
+    }
+}
+
+class NewDiscountPolicy implements DiscountPolicy {
+    @Override
+    public double apply(double amount) {
+        return amount * PriceConstants.NEW_DISCOUNT_RATE;
+    }
+}
+
 // 전략 선택 팩터리 메서드
 class DiscountPolicyFactory {
     static DiscountPolicy getPolicy(CustomerType type) {
@@ -105,6 +103,79 @@ class DiscountPolicyFactory {
     }
 }
 
+// 수수료 계산 메서드
+interface PaymentFeePolicy {
+    double apply(double amount);
+}
+
+class CardPaymentFeePolicy implements PaymentFeePolicy {
+    @Override
+    public double apply(double amount) {
+        return amount * PriceConstants.CARD_FEE_RATE;
+    }
+}
+
+class CashPaymentFeePolicy implements PaymentFeePolicy {
+    @Override
+    public double apply(double amount) {
+        return amount * PriceConstants.CASH_DISCOUNT_RATE;
+    }
+}
+
+class PointPaymentFeePolicy implements PaymentFeePolicy {
+    @Override
+    public double apply(double amount) {
+        if (amount > PriceConstants.POINT_FEE_THRESHOLD) {
+            return amount * PriceConstants.POINT_FEE_RATE;
+        }
+        
+        // 10만원 미만이면 그대로
+        return amount;
+    }
+}
+// 수수료 계산 팩터리 메서드
+class PaymentFeePolicyFactory {
+    static PaymentFeePolicy getPolicy(PaymentMethod method) {
+        return switch (method) {
+            case CARD -> new CardPaymentFeePolicy();
+            case CASH -> new CashPaymentFeePolicy();
+            case POINT -> new PointPaymentFeePolicy();
+        };
+    }
+}
+
+// 배송비 전략
+interface ShippingFeePolicy {
+    double calculate(double amount, CustomerType customerType);
+}
+
+class StandardShippingPolicy implements ShippingFeePolicy {
+    @Override
+    public double calculate(double amount, CustomerType customerType) {
+        if (amount < PriceConstants.BASIC_SHIPPING_THRESHOLD) {
+            return amount + PriceConstants.HIGH_SHIPPING_FEE;
+        } else if (amount < PriceConstants.FREE_SHIPPING_THRESHOLD
+                && customerType != CustomerType.VIP) {
+            return amount + PriceConstants.LOW_SHIPPING_FEE;
+        }
+        return amount;  // 무료 배송
+    }
+}
+
+// 알림 서비스
+class NotificationService {
+    void notifyOrderComplete(CustomerType customerType, double total) {
+        System.out.println("Order processed: " + total);
+        if (customerType == CustomerType.VIP) {
+            sendEmail("VIP order completed");
+        }
+    }
+
+    private void sendEmail(String message) {
+        // 이메일을 보냈다는 가정
+        System.out.println("Email sent: " + message);
+    }
+}
 
 
 // 매직넘버 상수화 (Enum)
