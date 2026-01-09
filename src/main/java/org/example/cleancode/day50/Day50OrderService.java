@@ -11,7 +11,7 @@ import java.util.Map;
  * 2. 비즈니스 규칙의 도메인 객체 응집
  * 3. 불변성과 캡슐화 강화
  */
-public class OrderService {
+public class Day50OrderService {
 
     // 주문 처리 메서드
     public void processOrder(Order order, Customer customer, Inventory inventory) {
