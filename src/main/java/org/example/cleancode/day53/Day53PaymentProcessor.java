@@ -5,10 +5,10 @@ package org.example.cleancode.day53;
  *
  */
 // 비지니스 로직 객체
-public class PaymentProcessor {
+public class Day53PaymentProcessor {
     private PaymentStrategy strategy;
 
-    public PaymentProcessor(PaymentStrategy strategy) {
+    public Day53PaymentProcessor(PaymentStrategy strategy) {
         this.strategy = strategy;
     }
 
@@ -26,7 +26,7 @@ class Main {
         PaymentStrategy cardStrategy = new CardPaymentStrategy("1234567890123456");
 
         // Process에 주입
-        PaymentProcessor processor = new PaymentProcessor(cardStrategy);
+        Day53PaymentProcessor processor = new Day53PaymentProcessor(cardStrategy);
         
         // 결제처리
         PaymentResult result = processor.processPayment(order);
