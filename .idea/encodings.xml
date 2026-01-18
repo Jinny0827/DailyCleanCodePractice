@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="Encoding" defaultCharsetForPropertiesFiles="UTF-8">
-    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/day31/Day31RateLimiter.java" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/day32/Day32FileUploader.java" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/day34/Day34PaginationSystem.java" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/day38/Day38ApiCache.java" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/day39/Day39TaskQueue.java" charset="UTF-8" />
-    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/day41/Day41TransactionSystem.java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/Y_2025/day31/Day31RateLimiter.java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/Y_2025/day32/Day32FileUploader.java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/Y_2025/day34/Day34PaginationSystem.java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/Y_2025/day38/Day38ApiCache.java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/Y_2025/day39/Day39TaskQueue.java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java/org/example/cleancode/Y_2025/day41/Day41TransactionSystem.java" charset="UTF-8" />
     <file url="PROJECT" charset="UTF-8" />
   </component>
 </project>
