@@ -19,71 +19,96 @@ public class Day65OrderProcessor {
     private InventoryService inventoryService;
     private EmailService emailService;
 
+    // 단건 주문 처리
+    private OrderResult processOrder(Order order) {
+        OrderResult result = new OrderResult(order.getId());
+
+        // 결제 처리
+        Payment payment = processPayment(order, result);
+        if(payment == null) return result;
+
+        // 재고 차감
+        boolean inventoryOk = processInventory(order, payment, result);
+        if (!inventoryOk) return result;
+
+        // 이메일 발송
+        boolean emailOk = processEmail(order, payment, result);
+        if(!emailOk) return result;
+
+        result.setStatus("SUCCESS");
+
+        return result;
+    }
+
+    // 단건 주문처리르 통한 다건 주문처리
     public List<OrderResult> processOrders(List<Order> orders) {
         List<OrderResult> results = new ArrayList<>();
 
         for(Order order : orders) {
-            OrderResult result = new OrderResult(order.getId());
-
-            // 1. 결제 처리를 Result 방식으로 변경
-            Result<Payment, PaymentException> paymentResult = paymentService.charge(order.getAmount());
-            if (paymentResult.isFailure()) {
-                result.setStatus("PAYMENT_FAILED");
-                result.setError(paymentResult.getError().getMessage());
-                results.add(result);
-                continue;
-            }
-
-            Payment payment = paymentResult.getValue();
-            result.setPaymentId(payment.getId());
-
-            //2. 재고 차감을 Result 방식으로 변경
-            boolean inventoryFailed = false;
-            for (OrderItem item : order.getItems()) {
-                Result<Void, InventoryException> inventoryResult =
-                        inventoryService.decreaseStock(item.getProductId(), item.getQuantity());
-
-                if(inventoryResult.isFailure()) {
-                    // 재고 실패 - 결제 환불 필요
-                    paymentService.refund(payment.getId());
-                    result.setStatus("INVENTORY_FAILED");
-                    result.setError(inventoryResult.getError().getMessage());
-                    inventoryFailed = true;
-                    break;
-                }
-            }
-
-            if (inventoryFailed) {
-                results.add(result);
-                continue;
-            }
-
-            result.setInventoryUpdated(true);
-
-            // 3. 이메일 발송을 Result 방식으로 변경
-            Result<Void, Exception> emailResult =
-                    emailService.sendConfirmation(order.getCustomerEmail(), order.getId());
-            if(emailResult.isFailure()) {
-                // 이메일 실패 - 결제 환불 + 재고 복구
-                paymentService.refund(payment.getId());
-                for (OrderItem item : order.getItems()) {
-                    inventoryService.increaseStock(item.getProductId(), item.getQuantity());
-                }
-                result.setStatus("EMAIL_FAILED");
-                result.setError(emailResult.getError().getMessage());
-                results.add(result);
-                continue;
-            }
-
-            result.setEmailSent(true);
-            result.setStatus("SUCCESS");
-
-
-            results.add(result);
+           OrderResult result = processOrder(order);
+           results.add(result);
         }
 
         return results;
     }
+
+    // 결제 처리
+    private Payment processPayment(Order order, OrderResult result) {
+
+        Result<Payment, PaymentException> paymentResult = paymentService.charge(order.getAmount());
+
+        if(paymentResult.isFailure()) {
+            result.setStatus("PAYMENT_FAILED");
+            result.setError(paymentResult.getError().getMessage());
+            return null;
+        }
+
+        Payment payment = paymentResult.getValue();
+        result.setPaymentId(payment.getId());
+
+        return payment;
+    }
+
+    // 재고 차감
+    private boolean processInventory(Order order, Payment payment, OrderResult result) {
+
+        for (OrderItem item : order.getItems()) {
+            Result<Void, InventoryException> inventoryResult =
+                    inventoryService.decreaseStock(item.getProductId(), item.getQuantity());
+
+            if(inventoryResult.isFailure()) {
+                paymentService.refund(payment.getId());
+                result.setStatus("INVENTORY_FAILED");
+                result.setError(inventoryResult.getError().getMessage());
+                return false;
+            }
+        }
+
+        result.setInventoryUpdated(true);
+        return true;
+    }
+
+    // 이메일 발송
+    private boolean processEmail(Order order, Payment payment, OrderResult result) {
+
+        Result<Void, Exception> emailResult =
+                emailService.sendConfirmation(order.getCustomerEmail(), order.getId());
+
+        if(emailResult.isFailure()) {
+            paymentService.refund(payment.getId());
+            for(OrderItem item : order.getItems()) {
+                inventoryService.increaseStock(item.getProductId(), item.getQuantity());
+            }
+            result.setStatus("EMAIL_FAILED");
+            result.setError(emailResult.getError().getMessage());
+            return false;
+        }
+
+        result.setEmailSent(true);
+        return true;
+
+    }
+
 }
 
 // 서비스 인터페이스
