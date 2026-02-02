@@ -3,6 +3,9 @@ package org.example.cleancode.Y_2026.day65;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Stack;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  *  Day 65 - 병렬 처리와 예외 안전성
@@ -22,38 +25,50 @@ public class Day65OrderProcessor {
     // 단건 주문 처리
     private OrderResult processOrder(Order order) {
         OrderResult result = new OrderResult(order.getId());
+        CompensationManager cm = new CompensationManager();
 
         // 결제 처리
-        Payment payment = processPayment(order, result);
-        if(payment == null) return result;
+        Payment payment = processPayment(order, result, cm);
+        if(payment == null) {
+            cm.compensateAll();
+            return result;
+        };
 
         // 재고 차감
-        boolean inventoryOk = processInventory(order, payment, result);
-        if (!inventoryOk) return result;
+        boolean inventoryOk = processInventory(order, payment, result, cm);
+        if (!inventoryOk) {
+            cm.compensateAll();
+            return result;
+        };
 
         // 이메일 발송
-        boolean emailOk = processEmail(order, payment, result);
-        if(!emailOk) return result;
+        boolean emailOk = processEmail(order, payment, result, cm);
+        if(!emailOk) {
+            cm.compensateAll();
+            return result;
+        };
 
         result.setStatus("SUCCESS");
 
         return result;
     }
 
-    // 단건 주문처리르 통한 다건 주문처리
+    // 단건 주문처리를 통한 다건 주문처리
     public List<OrderResult> processOrders(List<Order> orders) {
-        List<OrderResult> results = new ArrayList<>();
+        // 각 주문 비동기  처리
+        List<CompletableFuture<OrderResult>> futures = orders.stream()
+                .map(order -> CompletableFuture.supplyAsync(() -> processOrder(order)))
+                .collect(Collectors.toList());
 
-        for(Order order : orders) {
-           OrderResult result = processOrder(order);
-           results.add(result);
-        }
+        // 모든 결과를 기다림
+        return futures.stream()
+                .map(CompletableFuture::join)
+                .collect(Collectors.toList());
 
-        return results;
     }
 
     // 결제 처리
-    private Payment processPayment(Order order, OrderResult result) {
+    private Payment processPayment(Order order, OrderResult result, CompensationManager cm) {
 
         Result<Payment, PaymentException> paymentResult = paymentService.charge(order.getAmount());
 
@@ -66,18 +81,19 @@ public class Day65OrderProcessor {
         Payment payment = paymentResult.getValue();
         result.setPaymentId(payment.getId());
 
+        cm.add(() -> paymentService.refund(payment.getId()));
+
         return payment;
     }
 
     // 재고 차감
-    private boolean processInventory(Order order, Payment payment, OrderResult result) {
+    private boolean processInventory(Order order, Payment payment, OrderResult result, CompensationManager cm) {
 
         for (OrderItem item : order.getItems()) {
             Result<Void, InventoryException> inventoryResult =
                     inventoryService.decreaseStock(item.getProductId(), item.getQuantity());
 
             if(inventoryResult.isFailure()) {
-                paymentService.refund(payment.getId());
                 result.setStatus("INVENTORY_FAILED");
                 result.setError(inventoryResult.getError().getMessage());
                 return false;
@@ -85,20 +101,25 @@ public class Day65OrderProcessor {
         }
 
         result.setInventoryUpdated(true);
+        
+        // 보상 작업 등록
+        for(OrderItem item : order.getItems()) {
+            String productId = item.getProductId();
+            int quantity = item.getQuantity();
+            cm.add(() -> inventoryService.increaseStock(productId, quantity));
+        }
+
+        
         return true;
     }
 
     // 이메일 발송
-    private boolean processEmail(Order order, Payment payment, OrderResult result) {
+    private boolean processEmail(Order order, Payment payment, OrderResult result, CompensationManager cm) {
 
         Result<Void, Exception> emailResult =
                 emailService.sendConfirmation(order.getCustomerEmail(), order.getId());
 
         if(emailResult.isFailure()) {
-            paymentService.refund(payment.getId());
-            for(OrderItem item : order.getItems()) {
-                inventoryService.increaseStock(item.getProductId(), item.getQuantity());
-            }
             result.setStatus("EMAIL_FAILED");
             result.setError(emailResult.getError().getMessage());
             return false;
@@ -108,7 +129,6 @@ public class Day65OrderProcessor {
         return true;
 
     }
-
 }
 
 // 서비스 인터페이스
@@ -124,6 +144,32 @@ interface InventoryService {
 
 interface EmailService {
     Result<Void, Exception> sendConfirmation(String email, String orderId);
+}
+
+
+// 보상작업들을 저장할 클래스
+// 결제 취소 등 여러가지 상황에 대한 보상 처리 결합체 & 구현체
+@FunctionalInterface
+interface CompensatingAction {
+    void compensate();
+}
+
+// 보상 작업 관리자
+class CompensationManager {
+    private Stack<CompensatingAction> compensations = new Stack<>();
+    
+    // 보상 작업 추가
+    public void add(CompensatingAction action) {
+        compensations.add(action);
+    }
+    
+    // 모든 보상 실행
+    public void compensateAll() {
+        while (!compensations.isEmpty()) {
+            CompensatingAction action = compensations.pop();
+            action.compensate();
+        }
+    }
 }
 
 
