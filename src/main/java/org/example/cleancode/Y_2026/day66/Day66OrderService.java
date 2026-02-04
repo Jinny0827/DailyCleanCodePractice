@@ -18,6 +18,39 @@ public class Day66OrderService {
         this.repository = repository;
     }
 
+    public static void main(String[] args) {
+        // Repository 준비 (저장소)
+        InMemoryOrderRepository repository = new InMemoryOrderRepository();
+        repository.save(new Order("order-1", "홍길동", 50000));
+        repository.save(new Order("order-2", "김철수", 30000));
+
+        // Decorator 조합
+        OrderService service = new LoggingDecorator(
+                new CachingDecorator(
+                        new ValidatingDecorator(
+                                new CoreOrderService(repository)
+                        )
+                )
+        );
+
+        // 테스트
+        System.out.println("=== 첫 번째 호출 (캐시 미스) ===");
+        Order order1 = service.getOrder("order-1");
+        System.out.println("결과: " + order1.getCustomerName());
+
+        System.out.println("\n=== 두 번째 호출 (캐시 히트) ===");
+        Order order2 = service.getOrder("order-1");
+        System.out.println("결과: " + order2.getCustomerName());
+
+        try {
+            service.getOrder(null);
+        } catch (IllegalArgumentException e) {
+            System.out.println("예외 발생: " + e.getMessage());
+        }
+    }
+
+    
+    // 문제 코드 (원본)
     public Order getOrder(String orderId) {
         System.out.println("[LOG] getOrder 호출: " + orderId);
 
@@ -75,6 +108,7 @@ abstract class AbstractOrderDecorator implements OrderService {
     }
 }
 
+// 주문 유효성 데코레이터
 class ValidatingDecorator extends AbstractOrderDecorator {
 
     public ValidatingDecorator(OrderService wrapped) {
@@ -87,6 +121,44 @@ class ValidatingDecorator extends AbstractOrderDecorator {
         if (orderId == null || orderId.isBlank()) {
             throw new IllegalArgumentException("orderId는 비어있지 않아야 합니다");
         }
+
+        return super.getOrder(orderId);
+    }
+}
+
+// 캐시 관리 데코레이터
+class CachingDecorator extends AbstractOrderDecorator {
+    private Map<String, Order> cachingDeco = new HashMap<>();
+
+    public CachingDecorator(OrderService orderService) {
+        super(orderService);
+    }
+
+    @Override
+    public Order getOrder(String orderId) {
+        
+        if(cachingDeco.containsKey(orderId)) {
+            return cachingDeco.get(orderId); // 캐시히트
+        }
+        
+        // 캐시 미스 -> 아래로 위임
+        Order order = super.getOrder(orderId);
+        cachingDeco.put(orderId, order);
+
+        return order;
+    }
+}
+
+// 로그 관리 데코레이터
+class LoggingDecorator extends AbstractOrderDecorator {
+
+    public LoggingDecorator(OrderService wrapped) {
+        super(wrapped);
+    }
+
+    @Override
+    public Order getOrder(String orderId) {
+        System.out.println("[LOG] getOrder 호출: " + orderId);
 
         return super.getOrder(orderId);
     }
