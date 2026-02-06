@@ -15,32 +15,52 @@ import java.util.Map;
  */
 public class Day67OrderProcessor {
     private final StockValidator stockValidator;
+    private final StockService stockService;
     private final DiscountCalculator discountCalculator;
+    private final NotificationService notificationService;
 
-    public Day67OrderProcessor(StockValidator stockValidator, DiscountCalculator discountCalculator) {
+
+
+    public Day67OrderProcessor(StockValidator stockValidator,
+                               DiscountCalculator discountCalculator,
+                               StockService stockService,
+                               NotificationService notificationService) {
         this.stockValidator = stockValidator;
         this.discountCalculator = discountCalculator;
+        this.stockService = stockService;
+        this.notificationService = notificationService;
     }
 
     public boolean processOrder(Order order, User user) {
         // 재고 확인
         if(!stockValidator.validateStock(order.getItems())) {
-            EmailService.send(user.getEmail(), "주문 실패", "재고 부족");
+            notificationService.sendOrderFailure(user, "재고 부족");
             return false;
         }
 
         // 할인 계산
         double finalAmount = discountCalculator.calculate(order, user);
-    
+
+        // 재고 차감
+        try
+        {
+            stockService.decreaseStock(order.getItems());
+        } catch(IllegalStateException e) {
+            notificationService.sendOrderFailure(user, e.getMessage());
+            return false;
+        }
 
         // 결제 및 알림
-        if (PaymentGateway.charge(user.getCardNumber(), finalAmount)) {
-            Database.execute("INSERT INTO orders VALUES (" + order.getId() + ", " + finalAmount + ")");
-            EmailService.send(user.getEmail(), "주문 완료", "금액: " + finalAmount);
-            SMSService.send(user.getPhone(), "주문이 완료되었습니다.");
-            return true;
+        if (!PaymentGateway.charge(user.getCardNumber(), finalAmount)) {
+            notificationService.sendOrderFailure(user, "결제 실패");
+            return false;
         }
-        return false;
+
+        // 주문 저장 및 성공 알림
+        Database.execute("INSERT INTO orders VALUES (" + order.getId() + ", " + finalAmount + ")");
+        notificationService.sendOrderSuccess(user, finalAmount);
+
+        return true;
     }
 
 }
@@ -54,7 +74,6 @@ interface StockRepository {
 
 class StockRepositoryImpl implements StockRepository {
 
-
     @Override
     public int getStock(Long productId) {
         String sql = "SELECT stock FROM products WHERE id=" + productId;
@@ -66,6 +85,41 @@ class StockRepositoryImpl implements StockRepository {
         String sql = "UPDATE products SET stock = stock - " + quantity
                 + " WHERE id = " + productId;
         Database.execute(sql);
+    }
+}
+
+// 재고 차감 (비지니스 로직)
+class StockService {
+    private final StockRepository stockRepository;
+
+    public StockService(StockRepository stockRepository) {
+        this.stockRepository = stockRepository;
+    }
+
+    // 모든 아이템의 재고를 차감
+    public void decreaseStock(List<OrderItem> items) {
+
+        // 빈 리스트 체크
+        if (items == null || items.isEmpty()) {
+            throw new IllegalArgumentException("주문 항목이 비어있습니다.");
+        }
+
+
+        // 1단계: 모든 재고 확인
+        for (OrderItem item : items) {
+            int stock = stockRepository.getStock(item.getProductId());
+            if (stock < item.getQuantity()) {
+                throw new IllegalStateException(
+                        "재고 부족: " + item.getName() + " (현재: " + stock + ")"
+                );
+            }
+        }
+
+        // 2단계: 모두 OK면 차감
+        for (OrderItem item : items) {
+            stockRepository.decreaseStock(item.getProductId(), item.getQuantity());
+        }
+
     }
 }
 
@@ -128,7 +182,35 @@ class DiscountCalculator {
 }
 
 
-// 기반 클래스
+// 알림 서비스 인터페이스
+interface NotificationService {
+    void sendOrderSuccess(User user, double amount);
+    void sendOrderFailure(User user, String reason);
+}
+
+class NotificationServiceImpl implements NotificationService {
+
+    @Override
+    public void sendOrderSuccess(User user, double amount) {
+        EmailService.send(user.getEmail(), "주문 완료", "금액: " + amount);
+        SMSService.send(user.getPhone(), "주문이 완료되었습니다.");
+    }
+
+    @Override
+    public void sendOrderFailure(User user, String reason) {
+        // 실패 알림
+        EmailService.send(user.getEmail(), "주문 실패", reason);
+    }
+}
+
+
+
+
+
+
+
+
+// ------------------------------------------ 기반 클래스 ------------------------------------------
 class Database {
     private static Map<Long, Integer> stockMap = new HashMap<>();
 
