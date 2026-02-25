@@ -14,8 +14,11 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     implementation("com.google.guava:guava:33.1.0-jre")
     implementation ("io.vavr:vavr:0.10.4")
+    implementation ("org.slf4j:slf4j-api:2.0.9")
+    implementation("ch.qos.logback:logback-classic:1.5.18")
     compileOnly("org.projectlombok:lombok:1.18.30")
     annotationProcessor("org.projectlombok:lombok:1.18.30")
+
 }
 
 tasks.test {
