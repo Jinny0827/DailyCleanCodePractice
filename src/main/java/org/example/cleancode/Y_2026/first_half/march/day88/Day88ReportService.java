@@ -1,4 +1,4 @@
-package org.example.cleancode.Y_2026.first_half.day88;
+package org.example.cleancode.Y_2026.first_half.march.day88;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude;

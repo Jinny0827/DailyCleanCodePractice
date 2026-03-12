@@ -1,4 +1,4 @@
-package org.example.cleancode.Y_2026.first_half.day83;
+package org.example.cleancode.Y_2026.first_half.march.day83;
 
 import io.vavr.control.Either;
 import io.vavr.control.Try;
