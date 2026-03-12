@@ -1,4 +1,4 @@
-package org.example.cleancode.Y_2026.first_half.day82;
+package org.example.cleancode.Y_2026.first_half.march.day82;
 
 import io.vavr.collection.Seq;
 import io.vavr.control.Either;

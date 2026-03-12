@@ -1,4 +1,4 @@
-package org.example.cleancode.Y_2026.first_half.day90;
+package org.example.cleancode.Y_2026.first_half.march.day90;
 
 import com.google.common.eventbus.EventBus;
 import com.google.common.eventbus.Subscribe;

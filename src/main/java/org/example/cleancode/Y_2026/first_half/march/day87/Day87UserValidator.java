@@ -1,4 +1,4 @@
-package org.example.cleancode.Y_2026.first_half.day87;
+package org.example.cleancode.Y_2026.first_half.march.day87;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
