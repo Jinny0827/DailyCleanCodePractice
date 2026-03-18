@@ -28,6 +28,7 @@ dependencies {
     implementation("io.github.resilience4j:resilience4j-core:2.2.0")
     implementation("io.github.resilience4j:resilience4j-circuitbreaker:2.2.0")
     implementation("io.github.resilience4j:resilience4j-retry:2.2.0")
+    implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 }
 
 tasks.test {
