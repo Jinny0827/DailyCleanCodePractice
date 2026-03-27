@@ -1,15 +1,15 @@
 package org.example.cleancode.Y_2026.first_half.march.day100;
 
-
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.mapstruct.AfterMapping;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
+import org.mapstruct.MappingTarget;
 import org.mapstruct.factory.Mappers;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -24,59 +24,27 @@ import java.util.List;
 public class Day100UserService {
 
     public static void main(String[] args) {
+        // toResponse 테스트
         UserEntity entity = new UserEntity(
                 1L, "길동", "홍", "hong@test.com", "010-1234-5678",
                 "서울시", Role.ADMIN, LocalDateTime.now(), true
         );
-
         UserResponse response = UserMapper.INSTANCE.toResponse(entity);
         System.out.println(response);
 
+        // toEntity 테스트
+        CreateUserRequest req = new CreateUserRequest("길동 홍", "hong@test.com", "010-1234-5678", "서울시", "ADMIN");
+        UserEntity result = UserMapper.INSTANCE.toEntity(req);
+        System.out.println(result);
+
+        // toResponseList 테스트
+        List<UserEntity> entities = List.of(
+                new UserEntity(1L, "길동", "홍", "hong@test.com", "010-1111-1111", "서울", Role.ADMIN, LocalDateTime.now(), true),
+                new UserEntity(2L, "영희", "김", "kim@test.com", "010-2222-2222", "부산", Role.USER, LocalDateTime.now(), true)
+        );
+        List<UserResponse> list = UserMapper.INSTANCE.toResponseList(entities);
+        list.forEach(System.out::println);
     }
-
-
-    public UserResponse toResponse(UserEntity entity) {
-        UserResponse response = new UserResponse();
-        response.setId(entity.getId());
-        response.setFullName(entity.getFirstName() + " " + entity.getLastName()); // 조합 필요
-        response.setEmail(entity.getEmail());
-        response.setPhone(entity.getPhone());
-        response.setCreatedAt(entity.getCreatedAt().toString()); // 타입 변환 직접
-        response.setRoleName(entity.getRole().name());           // enum → String 직접
-        return response;
-    }
-
-    public UserEntity toEntity(CreateUserRequest request) {
-        UserEntity entity = new UserEntity();
-        entity.setFirstName(extractFirst(request.getFullName()));
-        entity.setLastName(extractLast(request.getFullName()));
-        entity.setEmail(request.getEmail());
-        entity.setPhone(request.getPhone());
-        entity.setRole(Role.valueOf(request.getRoleName()));
-        entity.setCreatedAt(LocalDateTime.now());
-        entity.setActive(true);
-        entity.setAddress(request.getAddress());
-        return entity;
-    }
-
-    public List<UserResponse> toResponseList(List<UserEntity> entities) {
-        List<UserResponse> result = new ArrayList<>();
-        for (UserEntity entity : entities) {   // stream 미사용, toResponse() 중복 호출
-            result.add(toResponse(entity));
-        }
-        return result;
-    }
-
-    private String extractFirst(String fullName) {
-        if (fullName == null || !fullName.contains(" ")) return fullName;
-        return fullName.substring(0, fullName.indexOf(" "));
-    }
-
-    private String extractLast(String fullName) {
-        if (fullName == null || !fullName.contains(" ")) return "";
-        return fullName.substring(fullName.indexOf(" ") + 1);
-    }
-
 }
 
 // 매핑 인터페이스
@@ -84,17 +52,38 @@ public class Day100UserService {
 interface UserMapper {
     UserMapper INSTANCE = Mappers.getMapper(UserMapper.class);
 
-    // 반환 객체에 대한 자동 매핑
-    @Mapping(target="roleName", source = "role")
-    @Mapping(target="fullName", expression = "java(entity.getFirstName() + \" \" + entity.getLastName())")
+    // Entity → Response
+    @Mapping(target = "roleName", source = "role")
+    @Mapping(target = "fullName", expression = "java(entity.getFirstName() + \" \" + entity.getLastName())")
     UserResponse toResponse(UserEntity entity);
 
-    // 요청 객체에 대한 자동 매핑
-    @
+    // List 매핑 (toResponse 재사용)
+    List<UserResponse> toResponseList(List<UserEntity> entities);
+
+    // Request → Entity
+    @Mapping(target = "id",        ignore = true)
+    @Mapping(target = "firstName", ignore = true)
+    @Mapping(target = "lastName",  ignore = true)
+    @Mapping(target = "role",      ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "active",    ignore = true)
     UserEntity toEntity(CreateUserRequest request);
 
+    @AfterMapping
+    default void afterToEntity(CreateUserRequest request, @MappingTarget UserEntity entity) {
+        String fullName = request.getFullName();
+        if (fullName != null && fullName.contains(" ")) {
+            entity.setFirstName(fullName.substring(0, fullName.indexOf(" ")));
+            entity.setLastName(fullName.substring(fullName.indexOf(" ") + 1));
+        } else {
+            entity.setFirstName(fullName);
+            entity.setLastName("");
+        }
+        entity.setRole(Role.valueOf(request.getRoleName()));
+        entity.setCreatedAt(LocalDateTime.now());
+        entity.setActive(true);
+    }
 }
-
 
 @Data
 @AllArgsConstructor
@@ -114,20 +103,22 @@ class UserEntity {
 @Data
 class UserResponse {
     private Long id;
-    private String fullName;      // firstName + lastName 조합
+    private String fullName;
     private String email;
     private String phone;
-    private String createdAt;     // LocalDateTime → String 변환
-    private String roleName;      // Role enum → String 변환
+    private String createdAt;
+    private String roleName;
 }
 
 @Data
+@AllArgsConstructor
+@NoArgsConstructor
 class CreateUserRequest {
-    private String fullName;      // → firstName / lastName 분리
+    private String fullName;
     private String email;
     private String phone;
     private String address;
-    private String roleName;      // → Role enum 변환
+    private String roleName;
 }
 
 enum Role {
