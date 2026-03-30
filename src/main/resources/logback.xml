@@ -1,0 +1,20 @@
+<!-- 로그 포맷 설정 -->
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <!-- %X{key} 로 MDC 값 참조 -->
+            <charset>UTF-8</charset>
+            <pattern>%d{HH:mm:ss} [%X{requestId}] [%X{userId}] %-5level %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger name="org.example.cleancode.Y_2026.first_half.march.day101.Day101OrderService"
+            level="DEBUG"
+            additivity="false">
+        <appender-ref ref="CONSOLE"/>
+    </logger>
+
+    <root level="DEBUG">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
