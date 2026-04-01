@@ -34,6 +34,8 @@ dependencies {
     implementation("org.glassfish:jakarta.el:4.0.2")
     implementation("com.bucket4j:bucket4j-core:8.7.0")
     implementation("io.micrometer:micrometer-core:1.12.4")
+
+    testImplementation("org.awaitility:awaitility:4.2.1")
 }
 
 tasks.test {
