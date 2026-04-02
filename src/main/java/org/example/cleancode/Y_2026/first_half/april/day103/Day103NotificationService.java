@@ -1,4 +1,4 @@
-package org.example.cleancode.Y_2026.first_half.april;
+package org.example.cleancode.Y_2026.first_half.april.day103;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
