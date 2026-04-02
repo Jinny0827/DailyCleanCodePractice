@@ -36,6 +36,7 @@ dependencies {
     implementation("io.micrometer:micrometer-core:1.12.4")
 
     testImplementation("org.awaitility:awaitility:4.2.1")
+    testImplementation("org.assertj:assertj-core:3.25.3")
 }
 
 tasks.test {
