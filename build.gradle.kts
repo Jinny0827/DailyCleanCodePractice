@@ -39,6 +39,8 @@ dependencies {
     testImplementation("org.assertj:assertj-core:3.25.3")
     testImplementation("org.mockito:mockito-core:5.11.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.11.0")
+
+    testImplementation("org.wiremock:wiremock-standalone:3.3.1")
 }
 
 tasks.test {
