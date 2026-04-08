@@ -30,6 +30,7 @@ dependencies {
     implementation("io.github.resilience4j:resilience4j-all:2.2.0")
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
     implementation("jakarta.validation:jakarta.validation-api:3.0.2")
+
     implementation("org.hibernate.validator:hibernate-validator:8.0.1.Final")
     implementation("org.glassfish:jakarta.el:4.0.2")
     implementation("com.bucket4j:bucket4j-core:8.7.0")
@@ -39,8 +40,11 @@ dependencies {
     testImplementation("org.assertj:assertj-core:3.25.3")
     testImplementation("org.mockito:mockito-core:5.11.0")
     testImplementation("org.mockito:mockito-junit-jupiter:5.11.0")
-
     testImplementation("org.wiremock:wiremock-standalone:3.3.1")
+    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
+    testImplementation("org.testcontainers:postgresql:1.20.4")
+    testImplementation("org.postgresql:postgresql:42.7.3")
+
 }
 
 tasks.test {
